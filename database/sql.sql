@@ -29,29 +29,28 @@ CREATE TABLE IF NOT EXISTS `approach` (
   `role` tinyint(3) unsigned NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `key` (`key`)
-) ENGINE=InnoDB AUTO_INCREMENT=18 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_bin;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_bin;
 
 -- Dumping data for table pl.cdn.approach: ~1 rows (approximately)
 DELETE FROM `approach`;
 INSERT INTO `approach` (`id`, `key`, `level`, `tag`, `exp`, `role`) VALUES
-	(1, '6nA4shTc7N2N4UmOta2ExfSHDXpLd5U', 255, NULL, NULL, 255);
+	(1, 'QtvrrdJiBhvKjdLXz3grg9vN9VzuNj4w', 255, NULL, NULL, 255);
 
 -- Dumping structure for table pl.cdn.contents
 CREATE TABLE IF NOT EXISTS `contents` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `access` varchar(32) COLLATE utf8mb3_bin NOT NULL,
   `level` bigint(20) unsigned NOT NULL,
-  `title` varchar(500) COLLATE utf8mb3_bin DEFAULT NULL,
-  `detail` varchar(1000) COLLATE utf8mb3_bin DEFAULT NULL,
-  `media_type` varchar(50) COLLATE utf8mb3_bin NOT NULL,
-  `uploaded_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `detail` varchar(200) COLLATE utf8mb3_bin DEFAULT NULL,
+  `media_type` varchar(100) COLLATE utf8mb3_bin NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`,`access`) USING BTREE
-) ENGINE=InnoDB AUTO_INCREMENT=13 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_bin;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_bin;
 
 -- Dumping data for table pl.cdn.contents: ~1 rows (approximately)
 DELETE FROM `contents`;
-INSERT INTO `contents` (`id`, `access`, `level`, `title`, `detail`, `media_type`, `uploaded_at`) VALUES
-	(1, 'loooooooooooooooooooooooooooooog', 254, 'the log file', NULL, 'text/plain', '1970-01-01 00:00:00');
+INSERT INTO `contents` (`id`, `access`, `level`, `detail`, `media_type`, `created_at`) VALUES
+	(1, 'loooooooooooooooooooooooooooooog', 254, NULL, 'text/plain', '1970-01-01 00:00:00');
 
 /*!40103 SET TIME_ZONE=IFNULL(@OLD_TIME_ZONE, 'system') */;
 /*!40101 SET SQL_MODE=IFNULL(@OLD_SQL_MODE, '') */;
