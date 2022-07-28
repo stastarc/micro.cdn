@@ -1,0 +1,1 @@
+python3.10 -m gunicorn main:app -c ./config.py
