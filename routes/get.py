@@ -1,26 +1,46 @@
-from os.path import exists as path_exists
 from fastapi.routing import APIRouter
 from fastapi.responses import Response, FileResponse
-from database import approach, content
+from database import Approach, Content, scope
 
 router = APIRouter(prefix="/data")
 
 @router.get("/{access_id}")
-async def get(access_id: str, key: str | None = None):
-    if not access_id or len(access_id) != 32:
-        return Response(status_code=400)
+async def get(
+        access_id: str,
+        key: str | None = None
+    ):
+    def status(code: int):
+        return Response(status_code=code)
 
-    details = content.details(access_id, 'level,media_type')
-    file_path = content.image_path(access_id)
+    if not Approach.valid(access_id):
+        return status(400)
 
-    if not details or not path_exists(file_path):
-        return Response(status_code=404)
+    path = Content.path(access_id)
+    
+    if path == None: return status(404)
 
-    level = details['level']
-    media_type = details['media_type']
+    with scope() as sess:
+        content = sess.query(Content).filter(Content.access == access_id).first()
+        if not content: return status(404)
 
-    if level != 0 and (not key or not approach.is_accessible(key, level)):
-        return Response(status_code=403)
+        level = content.level
 
-    return FileResponse(file_path, media_type=media_type)
+        if level != 0:
+            if not Approach.valid(key): return status(400)
+
+            approach = sess.query(Approach).filter(Approach.key == key).first()
+
+            if approach == None:
+                return status(403)
+
+            if level > 255:
+                if approach.id != content.level - 255:
+                    return status(403)
+            elif approach.level < level:
+                return status(403)
+
+        
+        content_type = content.media_type
+
+    return FileResponse(path, media_type=content_type)
     

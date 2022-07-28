@@ -1,9 +1,8 @@
 from datetime import datetime
-import json
 from fastapi.routing import APIRouter
 from fastapi import Form
-from fastapi.responses import Response, StreamingResponse
-from database import approach
+from fastapi.responses import Response
+from database import Approach, scope
 
 router = APIRouter(prefix="/manage")
 
@@ -15,85 +14,64 @@ async def create(
         exp: datetime | None = Form(default=None),
         role: int = Form(default=0),
     ):
+    def status(code: int):
+        return Response(status_code=code)
 
-    if not key or len(key) != 32:
-        return Response(status_code=401)
+    if not Approach.valid(key):
+        return status(400)
 
-    key_info = approach.details(key, 'role,level')
+    with scope() as sess:
+        approach = sess.query(Approach).filter(Approach.key == key).first()
 
-    if not key_info or key_info['role'] < approach.MANAGE:
-        return Response(status_code=401)
+        if approach == None:
+            return status(401)
 
-    if role >= key_info['role'] or level > key_info['level']:
-        return Response(status_code=403)
+        if approach.level < Approach.MANAGE or approach.level <= level or approach.role <= role:
+            return status(403)
 
-    if level < 0 or level > 255 or role < approach.READ or (exp and exp < datetime.now()):
-        return Response(status_code=400)
+        if level < Approach.READ or level > 255 or (exp != None and exp < datetime.now()):
+            return status(400)
 
-    key = approach.create(
-        level=level,
-        tag=tag,
-        role=role,
-        exp=exp
-    )
+        new_key = Approach.create_key(sess)
 
-    return Response(key)
+        sess.add(Approach(
+            key=new_key,
+            level=level,
+            tag=tag,
+            exp=exp,
+            role=role,
+        ))
+
+        sess.commit()
+
+    return Response(new_key)
 
 @router.post("/delete")
 async def delete(
         key: str = Form(),
         target_key: str = Form(),
     ):
+    def status(code: int):
+        return Response(status_code=code)
 
-    if not key or len(key) != 32 or not target_key or len(target_key) != 32 or key == target_key:
-        return Response(status_code=401)
+    if not Approach.valid(key) or not Approach.valid(target_key) or key == target_key:
+        return status(400)
     
-    role = approach.detail(key, 'role', None)
+    with scope() as sess:
+        approach = sess.query(Approach).filter(Approach.key == key).first()
 
-    if role == None or role < approach.MANAGE:
-        return Response(status_code=401)
+        if approach == None:
+            return status(401)
 
-    target_role = approach.detail(target_key, 'role', None)
+        target = sess.query(Approach).filter(Approach.key == target_key).first()
 
-    if target_role == None:
-        return Response(status_code=404)
+        if target == None:
+            return status(404)
 
-    if role <= target_role:
-        return Response(status_code=403)
+        if approach.level < Approach.MANAGE or approach.level <= target.level or approach.role <= target.role:
+            return status(403)
+
+        sess.delete(target)
+        sess.commit()
     
-    return Response(status_code=200 if approach.delete(target_key) else 404)
-
-
-@router.post("/list")
-async def list(
-        key: str = Form(),
-        offset: int = Form(default=0),
-        limit: int = Form(default=10),
-    ):
-
-    if not key or len(key) != 32:
-        return Response(status_code=401)
-    
-    info = approach.details(key, 'role, level')
-
-    if info == None or info['role'] < approach.MANAGE:
-        return Response(status_code=401)
-    
-    role = info['role']
-    level = info['level']
-
-    def listing():
-        yield '{"content":[\n'
-        for c in approach.list(offset, limit, role=role, level=level):
-            yield json.dumps({
-                'id': c['id'],
-                'key': c['key'],
-                'level': c['level'],
-                'tag': c['tag'],
-                'role': c['role'],
-                'exp': c['exp'].isoformat() if c['exp'] else None,
-            }, separators=(',', ':'))
-            yield ',\n'
-        yield ']}'
-
-    return StreamingResponse(listing(), media_type='text/plain')
+    return status(200)

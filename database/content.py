@@ -1,81 +1,89 @@
-from os import mkdir
+# 없애면 안돼ㅑ요~
 import os
-from os.path import join as path_join, exists as path_exists
-import random
 import shutil
+from .db import engine, factory, scope, Base
+from .approach import Approach
+import random
 import string
-from typing import Any
-from fastapi import UploadFile, File
+
+from sqlalchemy import Column, DateTime, text, exists
+from sqlalchemy.dialects.mysql import BIGINT, VARCHAR
+from fastapi import UploadFile
+from os import mkdir
+from os.path import exists as path_exists, join as path_join
+import string
 
 from env import Env
-from . import db
 
-TABLE = 'contents'
-IMAGE_ID = str | int
 ACCESS_CHARACTERS = string.ascii_lowercase + string.ascii_uppercase + string.digits
 ACCESS_LENGTH = 32
 CDN_DIR = Env.CDN_DIR
 
 _ = path_exists(CDN_DIR) or mkdir(CDN_DIR)
 
-def __id_column(id: IMAGE_ID) -> str:
-    if isinstance(id, str): return 'access'
-    if isinstance(id, int): return 'id'
-    raise TypeError(f'id must be str or int, not {type(id)}')
+class Content(Base):
+    __tablename__ = 'contents'
 
-def exists(id: IMAGE_ID, level: int | None = 0) -> bool:
-    return next(iter(db.fetchone(
-        f'select exists (select id from `{TABLE}` where `{__id_column(id)}`=%s{" and level<=%s" if level else ""})',
-            (id, level) if level else (id,)).values())) == 1
+    id = Column(BIGINT, primary_key=True, autoincrement=True)
+    access = Column(VARCHAR(32), primary_key=True)
+    level = Column(BIGINT, nullable=False)
+    detail = Column(VARCHAR(500), nullable=True)
+    media_type = Column(VARCHAR(100), nullable=False)
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP()"))
 
-def details(id: IMAGE_ID, col: str = '*', level: int | None = 0) -> dict[str, Any] | None:
-    return db.fetchone(
-        f'select {col} from `{TABLE}` where `{__id_column(id)}`=%s{" and level<=%s" if level else ""}',
-            (id, level) if level else (id,))
+    @staticmethod
+    def exists_access(sess, access) -> bool:
+        return sess.query(exists().where(Content.access == access)).scalar()
 
-def detail(key: IMAGE_ID, col: str, default: Any = None, level: int | None = 0):
-    d = details(key, col, level=level)
-    return d[col] if d else default
+    @staticmethod
+    def create_access(sess) -> str: # idk session type :(
+        while True:
+            access = ''.join(random.choice(ACCESS_CHARACTERS) for _ in range(ACCESS_LENGTH))
 
-def list(offset: int, count: int, level: int | None = 0) -> list[dict[str, Any]]:
-    return db.fetchall(f'select * from `{TABLE}`{" where level<=%s" + (" or level>=255" if level > 1 else "") if level else ""} limit %s, %s',
-        (level, offset, count) if level else (offset, count))
+            if not Content.exists_access(sess, access):
+                return access
+        
+    @staticmethod
+    def register(sess, file: UploadFile, level: int | str, detail: str | None = None) -> str | None:
+        if isinstance(level, str):
+            id = Approach.get_id(sess, level) 
+            if id == None: return None
+            level = id + 255
 
-def create_access() -> str:
-    access = ''.join(random.choice(ACCESS_CHARACTERS) for _ in range(ACCESS_LENGTH))
+        access = Content.create_access(sess)
 
-    if exists(access, level=None):
-        return create_access()
+        sess.add(Content(
+            access=access,
+            level=level,
+            detail=detail,
+            media_type=file.content_type,
+        ))
 
-    return access
+        return access
 
-def register(level: int = 0, title: str | None = None, detail: str | None = None, file: UploadFile = File()) -> str:
-    access = create_access()
+    @staticmethod
+    def file_save(access: str, file: UploadFile):
+        path = path_join(CDN_DIR, access)
+        
+        with open(path, 'wb') as f:
+            shutil.copyfileobj(file.file, f)
 
-    db.execute(f'insert into `{TABLE}` (`access`, `level`, `title`, `detail`, `media_type`) values (%s, %s, %s, %s, %s)',
-        (access, level, title, detail, file.content_type))
+    @staticmethod
+    def file_delete(access: str) -> bool:
+        path = Content.path(access)
+        if path == None: return False
+        os.remove(path)
+        return True
+
+    @staticmethod
+    def valid(key: str | None) -> bool:
+        return key != None and len(key) == 32
     
-    with open(image_path(access), 'wb') as f:
-        shutil.copyfileobj(file.file, f)
+    @staticmethod
+    def path(access: str) -> str | None:
+        path = path_join(CDN_DIR, access)
 
-    return access
-
-def delete(id: IMAGE_ID) -> bool:
-    if isinstance(id, int):
-        file = detail(id, 'access', level=None)
-        if not file: return False
-    else:
-        file = id
-
-    succ = db.execute(f'delete from `{TABLE}` where `{__id_column(id)}`=%s', (id,)) == 1
-    
-    if succ:
-        path = image_path(file)
-
-        if path_exists(path):
-            os.remove(path)
-
-    return succ
-
-def image_path(access_id) -> str:
-    return path_join(CDN_DIR, access_id)
+        if not path_exists(path):
+            return None
+        
+        return path

@@ -1,42 +1,55 @@
 from fastapi.routing import APIRouter
 from fastapi import UploadFile, File, Form
 from fastapi.responses import Response, FileResponse
-from database import approach, content
-from os.path import exists as path_exists
+from database import Content, scope
 
 router = APIRouter(prefix='/cdn')
 
 @router.get("/data/{access_id}")
 async def data(access_id: str):
-    media_type = content.detail(access_id, 'media_type', level=None)
-    file_path = content.image_path(access_id)
+    def status(code: int):
+        return status(code)
 
-    if not id or not path_exists(file_path):
-        return Response(status_code=404)
+    if not Content.valid(access_id):
+        return status(400)
 
-    return FileResponse(file_path, media_type=media_type)
+    path = Content.path(access_id)
+    
+    if path == None:
+        return status(404)
+    
+    with scope() as sess:
+        content = sess.query(Content).filter(Content.access == access_id).first()
+        if not content:
+            return status(404)
+        
+        content_type = content.media_type
+    
+    return FileResponse(path, media_type=content_type)
     
 
 @router.post("/upload")
 async def upload(
         file: UploadFile = File(),
-        title: str = Form(max_length=500),
-        detail: str = Form(max_length=100),
+        detail: str = Form(max_length=200),
         level: int | str = Form(default=0),
     ):
+    def status(code: int):
+        return Response(status_code=code)
 
-    if isinstance(level, str):
-        level = approach.detail(level, 'id')
-        if level == None:
-            return Response(status_code=403)
-        else: level = int(level) + 255
+    with scope() as sess:
+        access = Content.register(
+            sess=sess,
+            file=file,
+            detail=detail,
+            level=level,
+        )
 
-    access = content.register(
-        level=level,
-        title=title,
-        detail=detail,
-        file=file,
-    )
+        if access == None:
+            return status(404)
+
+        Content.file_save(access, file)
+        sess.commit()
 
     return Response(access)
 
@@ -45,5 +58,22 @@ async def upload(
 async def delete(
         access: str = Form(max_length=32),
     ):
+    def status(code: int):
+        return Response(status_code=code)
 
-    return Response(status_code=200 if content.delete(access) else 404)
+    if not Content.valid(access):
+        return status(400)
+
+    if Content.file_delete(access) == None:
+        return status(404)
+
+    with scope() as sess:
+        content = sess.query(Content).filter(Content.access == access).first()
+        if not content:
+            return status(404)
+
+        sess.delete(content)
+        Content.file_delete(access)
+        sess.commit()
+
+    return status(200)

@@ -1,46 +1,31 @@
-from pymysqlpool.pool import Pool
+from contextlib import contextmanager
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine
 from env import DatabaseEnv
 
-pool: Pool
+DB = DatabaseEnv
+Base = declarative_base()
 
-def init():
-    global pool
-    pool = Pool(
-        host=DatabaseEnv.HOST,
-        port=int(DatabaseEnv.PORT),
-        user=DatabaseEnv.USERNAME,
-        password=DatabaseEnv.PASSWORD,
-        db=DatabaseEnv.DATABASE,
-        autocommit=True,
-        min_size=20,
-        max_size=80,
-        timeout=10.0,
-        ping_check=5,
-        interval=200
-    )
+engine = create_engine(
+    f"mysql+pymysql://{DB.USERNAME}:{DB.PASSWORD}@{DB.HOST}:{DB.PORT}/{DB.DATABASE}", 
+    encoding="utf-8",
+    echo=DB.ECHO,
+    pool_size=40,
+    max_overflow=60,
+)
 
-def destroy():
-    pool.destroy()
+factory = sessionmaker(bind=engine)
 
-def execute(sql, args=None):
-    conn = pool.get_conn()
-    cursor = conn.cursor()
-    e = cursor.execute(sql, args)
-    pool.release(conn)
-    return e
-
-def fetchone(sql, args=None):
-    conn = pool.get_conn()
-    cursor = conn.cursor()
-    cursor.execute(sql, args)
-    result = cursor.fetchone()
-    pool.release(conn)
-    return result
-
-def fetchall(sql, args=None):
-    conn = pool.get_conn()
-    cursor = conn.cursor()
-    cursor.execute(sql, args)
-    result = cursor.fetchall()
-    pool.release(conn)
-    return result
+@contextmanager
+def scope():
+    session = factory()
+    
+    try:
+        yield session
+        session.commit()
+    except:
+        session.rollback()
+        raise
+    finally:
+        session.close()

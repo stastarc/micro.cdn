@@ -1,58 +1,47 @@
-
-from datetime import datetime
+# 없애면 안돼ㅑ요~
+from .db import engine, factory, scope, Base
 import random
 import string
-from typing import Any
-from . import db
 
-TABLE = 'approach'
+from sqlalchemy import Column, exists
+from sqlalchemy.dialects.mysql import BIGINT, VARCHAR, TINYINT, DATETIME
+
+
 KEY_CHARACTERS = string.ascii_lowercase + string.ascii_uppercase + string.digits
 KEY_LENGTH = 32
 
-READ = 0
-WRITE = 1
-DELETE = 2
-MANAGE = 3
-
-def exists(key: str):
-    return next(iter(db.fetchone(f'select exists (select id from `{TABLE}` where `key`=%s)', (key,)).values())) == 1
+class Approach(Base):
+    READ = 0
+    WRITE = 1
+    DELETE = 2
+    MANAGE = 3
     
-def details(key: str, col: str = '*', check_exp: bool = True) -> dict[str, Any] | None:
-    return db.fetchone(
-        f'select {col} from `{TABLE}` where `key`=%s {"and exp is null or exp > current_timestamp" if check_exp else ""}',
-        (key,)
-    )
+    __tablename__ = 'approach'
 
-def detail(key: str, col: str, default: Any = None, check_exp: bool = True):
-    d = details(key, col, check_exp=check_exp)
-    return d[col] if d else default
+    id = Column(BIGINT, primary_key=True, autoincrement=True)
+    key = Column(VARCHAR(32), primary_key=True)
+    level = Column(TINYINT, nullable=False)
+    tag = Column(VARCHAR(100), nullable=True)
+    exp = Column(DATETIME, nullable=True)
+    role = Column(TINYINT, nullable=False)
 
-def list(offset: int, count: int, role: int, level: int) -> list[dict[str, Any]]:
-    return db.fetchall(f'select * from `{TABLE}` where `role`<%s and `level`<=%s limit %s, %s',
-        (role, level, offset, count))
+    @staticmethod
+    def exists_key(sess, key) -> bool:
+        return sess.query(exists().where(Approach.key == key)).scalar()
 
-def is_accessible(key: str, level: int = 0, check_exp: bool = True) -> bool | None:
-    if level <= 255:
-        return detail(key, 'level', default=-1, check_exp=check_exp) >= level
-    else:
-        d = details(key, 'id,level', check_exp=check_exp)
-        if d == None: return None
-        return d['id'] == level - 255 or d['level'] > 1
+    @staticmethod
+    def create_key(sess) -> str: # idk session type :(
+        while True:
+            key = ''.join(random.choice(KEY_CHARACTERS) for _ in range(KEY_LENGTH))
 
-def create_key() -> str:
-    key = ''.join(random.choice(KEY_CHARACTERS) for _ in range(KEY_LENGTH))
+            if not Approach.exists_key(sess, key):
+                return key
     
-    if exists(key):
-        return create_key()
+    @staticmethod   
+    def get_id(sess, key) -> int | None:
+        return sess.query(Approach.id).filter(Approach.key == key).scalar()
 
-    return key
-
-def create(level: int = 0, tag: str | None = None, role: int = READ, exp: datetime | None = None) -> str:
-    key = create_key()
-    db.execute(f'insert into `{TABLE}` (`key`,`level`,`tag`,`role`,`exp`) values (%s,%s,%s,%s,%s)',
-        (key, level, tag, role, exp))
-
-    return key
-
-def delete(key: str) -> bool:
-    return db.execute(f'delete from `{TABLE}` where `key`=%s', (key,)) == 1
+    @staticmethod
+    def valid(key: str | None) -> bool:
+        return key != None and len(key) == 32
+        
