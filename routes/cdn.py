@@ -15,7 +15,7 @@ async def upload(
     def status(code: int):
         return Response(status_code=code)
 
-    if Approach.valid(key): return status(400)
+    if not Approach.valid(key): return status(400)
     
     with scope() as sess:
         approach = sess.query(Approach).filter(Approach.key == key).first()
