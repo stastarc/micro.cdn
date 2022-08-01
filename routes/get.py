@@ -12,9 +12,6 @@ async def get(
     def status(code: int):
         return Response(status_code=code)
 
-    if not Approach.valid(access_id):
-        return status(400)
-
     path = Content.path(access_id)
     
     if path == None: return status(404)
@@ -26,7 +23,7 @@ async def get(
         level = content.level
 
         if level != 0:
-            if not Approach.valid(key): return status(400)
+            if not Approach.valid(key): return status(401)
 
             approach = sess.query(Approach).filter(Approach.key == key).first()
 
