@@ -77,10 +77,11 @@ class Content(Base):
 
     @staticmethod
     def valid(key: str | None) -> bool:
-        return key != None and len(key) == 32
+        return key != None and len(key) == 32 and all(c in ACCESS_CHARACTERS for c in key)
     
     @staticmethod
     def path(access: str) -> str | None:
+        if not Content.valid(access): return None
         path = path_join(CDN_DIR, access)
 
         if not path_exists(path):
